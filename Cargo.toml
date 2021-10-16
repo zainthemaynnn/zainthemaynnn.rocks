@@ -1,0 +1,8 @@
+[package]
+name = "zainthemaynnn"
+description = "my website"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+actix-web = "3.3.2"
