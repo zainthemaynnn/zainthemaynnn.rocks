@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>zainthemaynnn.rocks</title>
+	<style>
+		body {
+			margin: 0
+		}
+
+		* {
+			font-family: Calibri, sans-serif;
+		}
+
+		.canvas_overlay {
+			position: relative;
+			background-color: ghostwhite
+		}
+
+		.canvas_overlay>.overlay {
+			position: absolute;
+			top: 20px;
+			left: 30px;
+			background-color: rgba(248, 248, 255, .8);
+			padding: 1em;
+			pointer-events: none
+		}
+	</style>
+</head>
+
+<body>
+	<div class="canvas_overlay">
+		<canvas id="canvas"></canvas>
+		<div class="overlay">
+			<p id="status">Connecting...</p>
+		</div>
+		<script type="text/javascript">
+			const socket = new WebSocket(location.origin.replace(/^http/, "ws") + "/ws")
+			socket.binaryType = "blob"
+
+			function Vec2(x, y) {
+				this.x = (x === undefined) ? 0 : x;
+				this.y = (y === undefined) ? 0 : y;
+			}
+
+			function drawLine(pos0, pos1) {
+				ctx.beginPath()
+				ctx.moveTo(pos0.x, pos0.y)
+				ctx.lineTo(pos1.x, pos1.y)
+				ctx.stroke()
+				ctx.closePath()
+			}
+
+			function getAbsMousePos(event, canvas) {
+				const bounds = canvas.getBoundingClientRect()
+				return new Vec2(event.clientX - bounds.left, event.clientY - bounds.top)
+			}
+
+			const colors = Array.of("black", "white", "red", "lime", "blue", "yellow", "magenta", "cyan")
+			const userCol = colors[Math.floor(Math.random() * colors.length)]
+
+			const canvas = document.getElementById("canvas")
+			const status = document.getElementById("status")
+			canvas.width = 1920
+			canvas.height = 1080
+			const ctx = canvas.getContext("2d")
+			ctx.lineWidth = 5
+			const connected = new Event("connected");
+
+			socket.onmessage = event => {
+				if (event.data instanceof Blob) {
+					event.data.text().then(t => {
+						var img = new Image
+						img.onload = function() {
+							ctx.drawImage(img, 0, 0)
+							status.dispatchEvent(connected)
+						};
+						img.src = t
+					})
+					return
+				} else {
+					resp = JSON.parse(event.data)
+					switch (resp.type) {
+						case "Draw":
+							ctx.strokeStyle = resp.color
+							ctx.lineWidth = resp.lineWidth
+							drawLine(new Vec2(resp.x0, resp.y0), new Vec2(resp.x1, resp.y1))
+							break
+						default:
+							console.error(`unidentified response ${resp.type}`)
+					}
+				}
+			}
+
+			socket.onclose = event => {
+				status.innerText = "Disconnected!"
+				canvas.onmousemove = null
+				canvas.onmousedown = null
+				canvas.onmouseup = null
+			}
+
+			status.addEventListener("connected", e => {
+				status.innerText = "Connected!"
+				const info = document.createElement("p")
+				info.innerText = "hold click to draw. there are no rules. unless you're on a phone, then screw you."
+				status.parentNode.appendChild(info)
+
+				var pos0, pos1
+				var pressed = false
+
+				canvas.onmousemove = event => {
+					if (!pressed) return
+					pos0 = pos1
+					pos1 = getAbsMousePos(event, canvas)
+					ctx.strokeStyle = userCol
+					drawLine(pos0, pos1)
+					socket.send(JSON.stringify({
+						type: "Draw",
+						x0: pos0.x,
+						y0: pos0.y,
+						x1: pos1.x,
+						y1: pos1.y,
+						color: userCol,
+						thickness: ctx.lineWidth,
+					}))
+				}
+				canvas.onmousedown = event => {
+					pressed = true
+					var cur = getAbsMousePos(event, canvas)
+					pos0 = cur
+					pos1 = cur
+					drawLine(pos0, pos1)
+				}
+				canvas.onmouseup = () => pressed = false
+			})
+		</script>
+	</div>
+</body>
+
+</html>
