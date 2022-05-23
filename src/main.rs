@@ -4,8 +4,14 @@ use actix::{prelude::*, Actor, StreamHandler};
 use actix_files::NamedFile;
 use actix_web::{get, web, App, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
+use image::Rgba;
 use serde::{Deserialize, Serialize};
-use std::{env, fmt::Debug, net::Ipv4Addr};
+use std::{env, fmt::Debug, net::Ipv4Addr, time::Duration};
+
+const WIDTH: u32 = 1920;
+const HEIGHT: u32 = 1080;
+const DEFAULT_CANVAS_COLOR: Rgba<u8> = Rgba([248u8, 248u8, 255u8, 0u8]);
+const BACKUP_FREQ: Duration = Duration::from_secs(600);
 
 #[get("/")]
 async fn index(_: web::Path<()>) -> actix_web::Result<NamedFile> {
@@ -102,7 +108,8 @@ async fn socket(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let srv = (server::Server::new()).start();
+    let srv = (server::Server::new(WIDTH, HEIGHT, DEFAULT_CANVAS_COLOR)).start();
+    srv.do_send(server::ScheduleBackups { freq: BACKUP_FREQ });
 
     HttpServer::new(move || {
         App::new()

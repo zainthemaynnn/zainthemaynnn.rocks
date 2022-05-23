@@ -1,18 +1,19 @@
 use actix::prelude::*;
-use image::{codecs::png::PngEncoder, ImageEncoder, Rgba, RgbaImage};
-use imageproc::{drawing, point::Point, rect::Rect};
+use image::{
+    codecs::png::{PngDecoder, PngEncoder},
+    ImageDecoder, ImageEncoder, ImageFormat, Rgba, RgbaImage,
+};
+use imageproc::{drawing, point::Point};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
-    mem::size_of,
+    fs::{self, File},
+    io,
     sync::{Arc, RwLock},
+    time::Duration,
 };
 
-const WIDTH: usize = 1920;
-const HEIGHT: usize = 1080;
-const PX_SIZE: usize = size_of::<Rgba<u8>>();
-const IMG_SIZE: usize = WIDTH * HEIGHT * PX_SIZE;
-const DEFAULT_CANVAS_COLOR: Rgba<u8> = Rgba([248u8, 248u8, 255u8, 0u8]);
+const CANVAS_PATH: &str = "./data/canvas.png";
 
 type Client = Recipient<Draw>;
 
@@ -26,6 +27,12 @@ pub struct Connect {
 #[rtype(result = "()")]
 pub struct Disconnect {
     pub client: Client,
+}
+
+#[derive(Clone, Debug, Message)]
+#[rtype(result = "()")]
+pub struct ScheduleBackups {
+    pub freq: Duration,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -74,16 +81,35 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new() -> Self {
-        let mut img = RgbaImage::new(WIDTH as u32, HEIGHT as u32);
-        drawing::draw_filled_rect_mut(
-            &mut img,
-            Rect::at(0, 0).of_size(WIDTH as u32, HEIGHT as u32),
-            DEFAULT_CANVAS_COLOR,
-        );
+    pub fn new(width: u32, height: u32, color: Rgba<u8>) -> Self {
+        let img = match File::open(CANVAS_PATH) {
+            Ok(f) => {
+                let decoder = PngDecoder::new(f).expect("failed to create png decoder");
+                let mut data = vec![0u8; decoder.total_bytes() as usize];
+                decoder.read_image(&mut data).expect("failed png decoding");
+                RgbaImage::from_raw(width, height, data)
+                    .expect("failed png to rgba conversion")
+            }
+            Err(e) => match e.kind() {
+                io::ErrorKind::NotFound => {
+                    fs::create_dir_all("/data/").expect("failed to create data/ directory");
+                    File::create(CANVAS_PATH).expect("failed to create backup image file");
+                    RgbaImage::from_pixel(width, height, color)
+                }
+                _ => panic!("{}", e),
+            },
+        };
+
         Self {
             clients: HashSet::new(),
             img: Arc::new(RwLock::new(img)),
+        }
+    }
+
+    fn backup(&self) {
+        if let Ok(img) = self.img.clone().read() {
+            img.save_with_format(CANVAS_PATH, ImageFormat::Png)
+                .expect("failed canvas backup");
         }
     }
 }
@@ -110,7 +136,6 @@ impl Handler<Connect> for Server {
                     image::ColorType::Rgba8,
                 )
                 .expect("failed rgba to png conversion");
-            buf.reserve(IMG_SIZE);
             base64::encode_config_buf(&data, base64::STANDARD, &mut buf);
         }
         buf.as_bytes().to_vec()
@@ -122,6 +147,14 @@ impl Handler<Disconnect> for Server {
 
     fn handle(&mut self, msg: Disconnect, _ctx: &mut Self::Context) -> Self::Result {
         self.clients.remove(&msg.client);
+    }
+}
+
+impl Handler<ScheduleBackups> for Server {
+    type Result = ();
+
+    fn handle(&mut self, msg: ScheduleBackups, ctx: &mut Self::Context) -> Self::Result {
+        ctx.run_interval(msg.freq, |act, _ctx| act.backup());
     }
 }
 

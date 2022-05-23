@@ -61,11 +61,13 @@
 			const userCol = colors[Math.floor(Math.random() * colors.length)]
 
 			const canvas = document.getElementById("canvas")
-			const status = document.getElementById("status")
 			canvas.width = 1920
 			canvas.height = 1080
 			const ctx = canvas.getContext("2d")
 			ctx.lineWidth = 5
+			const status = document.getElementById("status")
+			const info = document.createElement("p")
+			info.innerText = "hold click to draw. there are no rules. unless you're on a phone, then screw you."
 			const connected = new Event("connected");
 
 			socket.onmessage = event => {
@@ -95,6 +97,7 @@
 
 			socket.onclose = event => {
 				status.innerText = "Disconnected!"
+				info.parentNode = null
 				canvas.onmousemove = null
 				canvas.onmousedown = null
 				canvas.onmouseup = null
@@ -102,8 +105,6 @@
 
 			status.addEventListener("connected", e => {
 				status.innerText = "Connected!"
-				const info = document.createElement("p")
-				info.innerText = "hold click to draw. there are no rules. unless you're on a phone, then screw you."
 				status.parentNode.appendChild(info)
 
 				var pos0, pos1
